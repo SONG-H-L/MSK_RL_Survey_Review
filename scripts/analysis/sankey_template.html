@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Publication - Competition - Years - Engine - MSK - Learned Dynamics Model</title>
+<style>
+  html,body{margin:0;padding:0;background:#ffffff;}
+  #wrap{position:relative;font-family:-apple-system,'Segoe UI','Helvetica Neue',Arial,'Microsoft YaHei',sans-serif;}
+  .btns{position:fixed;bottom:12px;right:12px;display:flex;gap:8px;z-index:10;}
+  .btns button{font:12px/1 sans-serif;padding:6px 10px;border:1px solid #ccc;border-radius:5px;background:#fff;cursor:pointer;color:#333;}
+  .btns button:hover{background:#f2f4f7;border-color:#aaa;}
+  svg text{user-select:none;paint-order:stroke;stroke:#ffffff;stroke-width:3px;stroke-linejoin:round;}
+</style>
+</head>
+<body>
+<div class="btns">
+  <span style="font:12px/1 sans-serif;color:#999;align-self:center;margin-right:6px;">右键节点改颜色 · 双击复位位置</span>
+  <button id="reset">Reset layout</button>
+  <button id="dlsvg">Download SVG</button>
+  <button id="dlpng">Download PNG (2x)</button>
+</div>
+<input type="color" id="colorpick" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;">
+<div id="wrap"></div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<script>
+/* ================== 在这里改图题和注释 (留空 "" 则不显示) ================== */
+const FIG_TITLE = "";
+const FIG_NOTE  = "Note: n = study-model combinations (a paper using multiple engines/systems is counted once per combination)";
+/* ========================================================================== */
+
+const DATA = __DATA__;
+const W = 1700, H = 950;
+const M = {top: 64, right: 170, bottom: 44, left: 170};
+const LINK_OP = 0.45;
+
+const nodes = DATA.nodes.map(d => Object.assign({}, d));
+const links = DATA.links.map(d => ({source: d.source, target: d.target, value: d.value}));
+
+const sankey = d3.sankey()
+    .nodeId(d => d.id)
+    .nodeWidth(14)
+    .nodePadding(18)
+    .nodeSort(null)
+    .extent([[M.left, M.top], [W - M.right, H - M.bottom]]);
+const graph = sankey({nodes, links});
+// 每列顶端对齐: 各层整体平移到画布顶部, 节点依次排列
+DATA.layers.forEach((ids, i) => {
+  const ns = graph.nodes.filter(n => n.layer === i);
+  const minY = d3.min(ns, n => n.y0);
+  const dy = M.top - minY;
+  if (dy) ns.forEach(n => { n.y0 += dy; n.y1 += dy; });
+});
+graph.nodes.forEach(n => { n._x0 = n.x0; n._x1 = n.x1; n._y0 = n.y0; n._y1 = n.y1; }); // 初始位置(复位用)
+
+const svg = d3.select('#wrap').append('svg')
+    .attr('width', W).attr('height', H)
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('xmlns', 'http://www.w3.org/2000/svg');
+
+// 标签定位: 首列在节点左侧, 末列在右侧, 中间各列在节点上方
+function labelX(d) {
+  return d.layer === 0 ? d.x0 - 7
+       : d.layer === DATA.layers.length - 1 ? d.x1 + 7
+       : (d.x0 + d.x1) / 2;
+}
+function labelY(d) {
+  const leftRight = d.layer === 0 || d.layer === DATA.layers.length - 1;
+  return leftRight ? (d.y0 + d.y1) / 2 + 4 : d.y0 - 6;
+}
+function labelAnchor(d) {
+  return d.layer === 0 ? 'end'
+       : d.layer === DATA.layers.length - 1 ? 'start'
+       : 'middle';
+}
+const labelText = d => `${d.title} (${d.value})`;
+
+// 渐变: 源节点色 -> 目标节点色
+const defs = svg.append('defs');
+graph.links.forEach((l, i) => {
+  const g = defs.append('linearGradient')
+    .attr('id', `lg${i}`)
+    .attr('gradientUnits', 'userSpaceOnUse')
+    .attr('x1', l.source.x1).attr('x2', l.target.x0);
+  g.append('stop').attr('offset', '0%').attr('stop-color', l.source.color);
+  g.append('stop').attr('offset', '100%').attr('stop-color', l.target.color);
+});
+const gradSel = defs.selectAll('linearGradient').data(graph.links);
+
+const linkSel = svg.append('g').selectAll('path')
+  .data(graph.links).join('path')
+    .attr('d', d3.sankeyLinkHorizontal())
+    .attr('stroke', (d,i) => `url(#lg${i})`)
+    .attr('stroke-width', d => Math.max(1, d.width))
+    .attr('fill', 'none')
+    .attr('stroke-opacity', LINK_OP)
+    .style('cursor', 'pointer');
+linkSel.append('title').text(d => `${d.source.title} → ${d.target.title}: ${d.value}`);
+
+const nodeSel = svg.append('g').selectAll('rect')
+  .data(graph.nodes).join('rect')
+    .attr('x', d => d.x0).attr('y', d => d.y0)
+    .attr('width', d => d.x1 - d.x0).attr('height', d => d.y1 - d.y0)
+    .attr('rx', 2.5)
+    .attr('fill', d => d.color)
+    .style('cursor', 'move');
+nodeSel.append('title').text(d => `${d.title}: ${d.value}`);
+
+const textSel = svg.append('g')
+    .attr('font-size', 12).attr('fill', '#2b2b2b')
+  .selectAll('text')
+  .data(graph.nodes).join('text')
+    .attr('x', labelX)
+    .attr('y', labelY)
+    .attr('text-anchor', labelAnchor)
+    .style('font-weight', d => (d.layer === 0 || d.layer === DATA.layers.length - 1) ? 600 : 400)
+    .style('pointer-events', 'none')
+    .text(labelText);
+
+// 图题(留空不显示)与注释
+if (FIG_TITLE) {
+  svg.append('text')
+      .attr('x', W / 2).attr('y', 34)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', 17)
+      .attr('fill', '#1a1a1a')
+      .style('font-weight', 700)
+      .text(FIG_TITLE);
+}
+svg.append('text')
+    .attr('x', M.left).attr('y', H - 14)
+    .attr('text-anchor', 'start')
+    .attr('font-size', 11)
+    .attr('fill', '#8a8a8a')
+    .text(FIG_NOTE + `; each column sums to ${d3.sum(graph.nodes.filter(n => n.layer === 0), n => n.value)}.`);
+
+// 分层标题
+function headerX(i) {
+  const ns = graph.nodes.filter(n => n.layer === i);
+  return d3.mean(ns, n => (n.x0 + n.x1) / 2);
+}
+const headerSel = svg.append('g').selectAll('text')
+  .data(DATA.layers).join('text')
+    .attr('x', (ids, i) => headerX(i))
+    .attr('y', 38)
+    .attr('text-anchor', 'middle')
+    .attr('font-size', 13)
+    .attr('letter-spacing', '0.06em')
+    .attr('fill', '#666')
+    .style('font-weight', 600)
+    .text((ids, i) => DATA.layer_titles[i]);
+
+// 统一重绘 (拖拽/复位后调用)
+function redraw() {
+  sankey.update(graph);
+  gradSel.attr('x1', l => l.source.x1).attr('x2', l => l.target.x0);
+  linkSel.attr('d', d3.sankeyLinkHorizontal())
+         .attr('stroke-width', l => Math.max(1, l.width));
+  nodeSel.attr('x', d => d.x0).attr('y', d => d.y0)
+         .attr('width', d => d.x1 - d.x0).attr('height', d => d.y1 - d.y0);
+  textSel.attr('x', labelX).attr('y', labelY);
+  headerSel.attr('x', (ids, i) => headerX(i));
+}
+
+// 悬停: 高亮相连流线, 其余淡出; 节点描边强调
+function dimLinks(keep) {
+  linkSel.attr('stroke-opacity', l => keep(l) ? 0.9 : 0.08);
+}
+function resetLinks() { linkSel.attr('stroke-opacity', LINK_OP); }
+linkSel.on('mouseenter', (e, d) => dimLinks(l => l === d))
+       .on('mouseleave', resetLinks);
+nodeSel.on('mouseenter', function (e, d) {
+         dimLinks(l => l.source === d || l.target === d);
+         d3.select(this).attr('stroke', '#333').attr('stroke-width', 1.2);
+       })
+       .on('mouseleave', function () {
+         resetLinks();
+         d3.select(this).attr('stroke', null);
+       });
+
+// 拖拽: 上下左右自由移动
+const drag = d3.drag()
+  .on('drag', function (event, d) {
+    const h = d.y1 - d.y0, w = d.x1 - d.x0;
+    d.y0 = Math.max(M.top, Math.min(H - M.bottom - h, d.y0 + event.dy));
+    d.y1 = d.y0 + h;
+    d.x0 = Math.max(M.left, Math.min(W - M.right - w, d.x0 + event.dx));
+    d.x1 = d.x0 + w;
+    redraw();
+  });
+nodeSel.call(drag);
+
+// 双击节点 = 复位该节点; Reset 按钮 = 全部复位
+function resetNode(d) {
+  d.x0 = d._x0; d.x1 = d._x1; d.y0 = d._y0; d.y1 = d._y1;
+  redraw();
+}
+nodeSel.on('dblclick', (e, d) => { e.stopPropagation(); resetNode(d); });
+document.getElementById('reset').onclick = () => graph.nodes.forEach(resetNode);
+
+// 右键节点 = 弹出取色器改颜色, 节点和相连流线渐变实时更新
+const pick = document.getElementById('colorpick');
+function refreshGradientColors() {
+  gradSel.each(function (l) {
+    const stops = d3.select(this).selectAll('stop');
+    stops.filter((s, i) => i === 0).attr('stop-color', l.source.color);
+    stops.filter((s, i) => i === 1).attr('stop-color', l.target.color);
+  });
+}
+nodeSel.on('contextmenu', function (event, d) {
+  event.preventDefault();
+  pick.value = d.color;
+  pick.oninput = () => {
+    d.color = pick.value;
+    d3.select(this).attr('fill', d.color);
+    refreshGradientColors();
+  };
+  pick.click();
+});
+
+// 导出
+function svgString() {
+  const s = document.querySelector('#wrap svg').cloneNode(true);
+  s.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  return new XMLSerializer().serializeToString(s);
+}
+document.getElementById('dlsvg').onclick = () => {
+  const blob = new Blob([svgString()], {type: 'image/svg+xml;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sankey_engine_msk.svg';
+  a.click();
+};
+document.getElementById('dlpng').onclick = () => {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = W * 2; c.height = H * 2;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = 'sankey_engine_msk.png';
+    a.click();
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString());
+};
+</script>
+</body>
+</html>
