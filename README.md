@@ -8,10 +8,12 @@ This repository contains the data and materials of our review
 **1. Figure 3E (figure panel).**
 During figure assembly, an incorrect version of the Figure 3E panel was
 inadvertently included in the submitted manuscript and in the corresponding
-supplementary files. The correct version of this panel is provided in
-[`figures/Figure_3E_corrected.png`](figures/Figure_3E_corrected.png). This
-error occurred at the figure-assembly stage and does not affect the underlying
-data, the analyses, or any of the reported results.
+supplementary files. The correct version of this panel is shown below
+(also available at [`figures/Figure_3E_corrected.png`](figures/Figure_3E_corrected.png)).
+This error occurred at the figure-assembly stage and does not affect the
+underlying data, the analyses, or any of the reported results.
+
+![Corrected Figure 3E](figures/Figure_3E_corrected.png)
 
 **2. Section 2.2.1 "Temporal trends of physics engines and learned dynamics
 representations" (text).**
